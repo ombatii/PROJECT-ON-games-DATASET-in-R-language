@@ -1,0 +1,284 @@
+---
+title: "PROJECT ON games DATASET"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Business Understanding
+Do data analysis on games data set  so as to understand the relationship between the columns and predict the future values.
+
+# Data
+This data was gotten from this site:
+
+
+
+
+# Visual Exploratory Descriptive Analysis
+
+## Import packages
+```{r}
+library (tidymodels)
+library(visdat)
+library(forecast)
+```
+
+Those are packages that are in the tidymodels which we are going to use in this project.
+
+## Import dataset
+```{r}
+data <- games
+glimpse(data)
+```
+
+Our data set has 1,512 and 14 columns
+
+
+
+
+## Explore the data class structure visually
+```{r}
+vis_dat(data)
+```
+Most of the coulmns in our data set are character data type.
+
+## convert all remaining character variables to factors 
+```{r}
+# convert all remaining character variables to factors 
+data <- data %>% 
+           mutate(across(where(is.character), as.factor))
+vis_dat(data)
+```
+There is no character data type  column.
+
+## Visualizing missing data
+```{r}
+vis_miss(data, sort_miss = TRUE)
+```
+
+## Viewing missing dataset 
+```{r}
+is.na(data) %>% colSums()
+```
+The only coulmns with missing data are Team,Rating and Summary.
+
+## Fill missing data with mode
+
+```{r}
+# Replace missing values with mode
+data_filled <- data %>%
+  mutate_all(~ ifelse(is.na(.), Mode(., na.rm = TRUE), .))
+
+# Mode function to calculate mode
+Mode <- function(x, na.rm = FALSE) {
+  if (na.rm) {
+    x <- x[!is.na(x)]
+  }
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Verify if missing values have been filled with the mode
+is.na(data) %>% colSums()
+
+```
+Now there is no missing data.
+
+
+
+
+## 1.Bubble chart of game ratings and number of reviews
+```{r}
+ggplot(data, aes(x = Rating, y = as.numeric(gsub("K", "", `Number of Reviews`)), size = Rating)) +
+  geom_point() +
+  xlab("Rating") +
+  ylab("Number of Reviews") + theme_classic()
+```
+
+Most games had a review of 4 and relatively they were around 500.
+
+
+
+
+## Box plot of game ratings
+```{r}
+ggplot(data, aes(y = Rating)) +
+  geom_boxplot() +
+  ylab("Rating")
+```
+There are many outliers in the boxplot of game ratings.
+
+## Scatter plot of number of reviews vs. rating
+
+
+## Histogram of game ratings
+```{r}
+ggplot(data, aes(x = Rating)) +
+  geom_histogram(binwidth = 0.1, fill = "red", color = "white") +
+  xlab("Rating") +
+  ylab("Frequency")
+```
+The game ratings has normal distribution.
+
+## Bar chart of game ratings
+```{r}
+ggplot(data, aes(x = Title, y = Rating)) +
+  geom_bar(stat = "identity") +
+  xlab("Game Title") +
+  ylab("Rating")
+```
+## Non-Visual Exploratory Data Analysis
+
+## Top rows of our data set
+```{r}
+head(data)
+```
+
+## Bottom rows of our data set
+```{r}
+tail(data)
+```
+
+From the two tables we can say our data is not biased.
+## Structure of our data set
+```{r}
+glimpse(data)
+```
+
+Our data set has just numeric and factor data type columns as data cleaning.
+## Statistical summary of our data set
+```{r}
+skimr::skim(data)
+```
+
+## Create a new data frame that contains only the games that have been played at least 10,000 times
+```{r}
+data %>%
+  filter("Total Plays" >= 10000)
+```
+## Create a new data frame that contains only the games with a rating of 4 or higher
+```{r}
+games_4 <- data %>%
+  filter(Rating >= 4)
+
+games_4
+```
+These  are games with rating of 4 and above.
+
+
+# Data wrangling
+Here are some data wrangling done in the above:
+* Filling missing data with mode.
+* Convert all character columns to factor.
+
+
+## Convert columns with numeric values to numeric type
+```{r}
+data <- data %>%
+  mutate(across(c(Rating, `Times Listed`, `Number of Reviews`, Plays, Playing, Backlogs, Wishlist), as.numeric))
+```
+
+
+## Convert 'Release Date' column to Date type
+```{r}
+data$`Release Date` <- as.Date(data$`Release Date`, format = "%b %d, %Y")
+```
+
+## Extract year and month from 'Release Date'
+```{r}
+# Extract year from 'Release Date'
+data$Year <- lubridate::year(data$`Release Date`)
+
+#Extract month from 'Release Date'
+data$Month <- lubridate::month(data$`Release Date`, label = TRUE)
+```
+
+## Split 'Genres' column into separate genre columns
+```{r}
+data <- data %>%
+  separate_rows(Genres, sep = "', '", convert = TRUE) %>%
+  pivot_wider(names_from = Genres, values_from = Genres, values_fn = length, values_fill = 0, names_prefix = "Genre_")
+```
+
+## Remove unnecessary columns
+```{r}
+data <- data %>%
+  select(-c(`...1`, Summary, Reviews))
+```
+
+## Rename columns to remove spaces and special characters
+```{r}
+# Rename columns to remove spaces and special characters
+colnames(data_filled) <- make.names(colnames(data_filled), unique = TRUE)
+```
+
+## Convert K values to numeric in columns with "K" suffix
+```{r}
+#  Convert K values to numeric in columns with "K" suffix
+data_filled[, c("Times.Listed", "Number.of.Reviews", "Plays", "Playing", "Backlogs", "Wishlist")] <- lapply(data_filled[, c("Times.Listed", "Number.of.Reviews", "Plays", "Playing", "Backlogs", "Wishlist")], function(x) as.numeric(gsub("K", "", x)))
+```
+
+## Create a new column called Total Plays that is the sum of the Plays and Playing columns
+```{r}
+data_filled$"Total Plays" <- data$Plays + data$Playing
+head(data_filled$"Total Plays")
+```
+
+
+
+## Create a new column called Average Rating that is the average of the Rating column.
+```{r}
+data_filled$"Average_Rating" <- mean(data$Rating)
+```
+
+## Group the data by Genre and calculate the total number of games in each genre
+```{r}
+data_filled %>%
+  group_by(Genres) %>%
+  summarise(Count = n())
+```
+
+
+
+## See the data after data wrangling
+```{r}
+head(data_filled)
+```
+
+```{r}
+glimpse(data_filled)
+```
+
+That is our new data frame after data wrangling.
+
+# Visual analysis(Time series analysis using ARIMA model)
+
+
+## Convert the data to a time series
+```{r}
+ts_data <- ts(data_filled$Rating)
+```
+
+## Fit an ARIMA model
+```{r}
+arima_model <- auto.arima(ts_data)
+```
+
+## Forecast future values
+```{r}
+forecast_data <- forecast(arima_model, h = 12)
+```
+
+
+## Visualize the time series and forecast
+```{r}
+ggplot() +
+  geom_line(aes(x = time(ts_data), y = ts_data, color = "Actual")) +
+  geom_line(aes(x = time(forecast_data$mean), y = forecast_data$mean, color = "Forecast")) +
+  xlab("Time") +
+  ylab("Rating") +
+  ggtitle("Time Series Analysis using ARIMA") +
+  theme_minimal()
+```
+
+The plot shows the actual values and predicted values. These data show random variation; There are no patterns or cycles.
